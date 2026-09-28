@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { apiFetch, ApiError } from "@/lib/api";
 import { Card } from "@/components/Card";
+import { CollectionHero } from "@/components/CollectionHero";
+import { IndexCard } from "@/components/IndexCard";
+import { FolderIcon } from "@/components/icons";
 import { Badge } from "./_components/Badge";
 import {
   EXAM_STATUS_COLOR,
@@ -32,6 +35,7 @@ interface ModuleCardData {
 export default function EstudianteDashboardPage() {
   const [modules, setModules] = useState<ModuleCardData[] | null>(null);
   const [error, setError] = useState<string>();
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -72,95 +76,114 @@ export default function EstudianteDashboardPage() {
     };
   }, []);
 
+  const filteredModules = useMemo(() => {
+    if (!modules) return null;
+    const q = search.trim().toLowerCase();
+    if (!q) return modules;
+    return modules.filter(
+      (m) => m.title.toLowerCase().includes(q) || m.programName.toLowerCase().includes(q),
+    );
+  }, [modules, search]);
+
   return (
-    <main className="flex-1 px-4 py-8 max-w-3xl mx-auto w-full">
-      <div className="flex items-center justify-between gap-3 mb-8 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-navy-txt">Mis módulos</h1>
-          {modules && modules.length > 0 ? (
-            <p className="text-sm text-ink-suave mt-0.5">
-              {modules.length} {modules.length === 1 ? "módulo inscrito" : "módulos inscritos"}
+    <main className="flex-1 px-4 pb-8 max-w-3xl mx-auto w-full">
+      <CollectionHero
+        variant="estudiante"
+        title="Mis módulos"
+        subtitle={
+          modules && modules.length > 0
+            ? `${modules.length} ${modules.length === 1 ? "módulo inscrito" : "módulos inscritos"}`
+            : "Aquí verás los módulos en los que estás inscrito."
+        }
+        searchValue={search}
+        onSearchChange={modules && modules.length > 0 ? setSearch : undefined}
+        searchPlaceholder="Buscar módulo o programa…"
+        action={
+          <Link
+            href="/estudiante/tareas"
+            className="tap-target text-paper2 font-semibold text-sm bg-paper2/15 hover:bg-paper2/25 transition-colors rounded-full px-4"
+          >
+            Ver mis tareas →
+          </Link>
+        }
+      />
+
+      <div>
+        {error ? (
+          <p role="alert" className="text-peligro mb-4">
+            {error}
+          </p>
+        ) : null}
+
+        {!filteredModules ? (
+          <p className="text-ink-suave">Cargando…</p>
+        ) : filteredModules.length === 0 ? (
+          <Card>
+            <p className="text-ink-suave">
+              {modules && modules.length > 0
+                ? "Ningún módulo coincide con tu búsqueda."
+                : "Todavía no estás inscrito en ningún módulo."}
             </p>
-          ) : null}
-        </div>
-        <Link
-          href="/estudiante/tareas"
-          className="tap-target text-azul2 font-semibold link-pill hover:underline"
-        >
-          Ver mis tareas →
-        </Link>
+          </Card>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {filteredModules.map((m) => {
+              const progressPercent =
+                m.exercisesTotal > 0 ? Math.round((m.exercisesAttempted / m.exercisesTotal) * 100) : 0;
+              return (
+                <Link key={m.moduleId} href={`/estudiante/modulos/${m.moduleId}`} className="tap-target block">
+                  <IndexCard
+                    variant="estudiante"
+                    icon={<FolderIcon className="h-full w-full" />}
+                    title={m.title}
+                    meta={`${m.programName} · Semestre ${m.semester} · ${m.credits} créditos`}
+                    trailing={
+                      <Badge className={MODULE_STATUS_COLOR[m.status]}>{MODULE_STATUS_LABEL[m.status]}</Badge>
+                    }
+                  >
+                    <div className="mt-3">
+                      <div className="flex items-center justify-between text-xs font-semibold text-ink-suave mb-1.5">
+                        <span>Ejercicios</span>
+                        <span>
+                          {m.exercisesAttempted}/{m.exercisesTotal}
+                        </span>
+                      </div>
+                      <div className="h-2 rounded-full bg-borde/60 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-azul2 transition-[width] duration-500"
+                          style={{ width: `${progressPercent}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {m.hasExam || m.hasSurvey ? (
+                      <div className="mt-3 pt-3 border-t border-borde flex flex-wrap gap-2">
+                        {m.hasExam ? (
+                          <Badge className={EXAM_STATUS_COLOR[m.examStatus]}>
+                            Examen: {EXAM_STATUS_LABEL[m.examStatus]}
+                            {m.bestExamScore !== null ? ` (${m.bestExamScore}/70)` : ""}
+                          </Badge>
+                        ) : null}
+                        {m.hasSurvey ? (
+                          <Badge
+                            className={
+                              m.surveySubmitted
+                                ? "text-exito border-exito/40 bg-exito/15"
+                                : "text-ink-suave border-borde bg-borde/50"
+                            }
+                          >
+                            {m.surveySubmitted ? "Encuesta enviada" : "Encuesta pendiente"}
+                          </Badge>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </IndexCard>
+                </Link>
+              );
+            })}
+          </div>
+        )}
       </div>
-
-      {error ? (
-        <p role="alert" className="text-peligro mb-4">
-          {error}
-        </p>
-      ) : null}
-
-      {!modules ? (
-        <p className="text-ink-suave">Cargando…</p>
-      ) : modules.length === 0 ? (
-        <Card>
-          <p className="text-ink-suave">Todavía no estás inscrito en ningún módulo.</p>
-        </Card>
-      ) : (
-        <div className="flex flex-col gap-5">
-          {modules.map((m) => {
-            const progressPercent =
-              m.exercisesTotal > 0 ? Math.round((m.exercisesAttempted / m.exercisesTotal) * 100) : 0;
-            return (
-              <Link key={m.moduleId} href={`/estudiante/modulos/${m.moduleId}`} className="tap-target block">
-                <Card className="hover:shadow-[var(--shadow-hover)] hover:border-borde-fuerte hover:-translate-y-0.5">
-                  <div className="flex items-start justify-between gap-3 flex-wrap">
-                    <div>
-                      <h2 className="text-lg font-bold text-navy-txt">{m.title}</h2>
-                      <p className="text-sm text-ink-suave mt-0.5">
-                        {m.programName} · Semestre {m.semester} · {m.credits} créditos
-                      </p>
-                    </div>
-                    <Badge className={MODULE_STATUS_COLOR[m.status]}>{MODULE_STATUS_LABEL[m.status]}</Badge>
-                  </div>
-
-                  <div className="mt-5">
-                    <div className="flex items-center justify-between text-xs font-semibold text-ink-suave mb-1.5">
-                      <span>Ejercicios</span>
-                      <span>
-                        {m.exercisesAttempted}/{m.exercisesTotal}
-                      </span>
-                    </div>
-                    <div className="h-2 rounded-full bg-borde/60 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-azul2 transition-[width] duration-500"
-                        style={{ width: `${progressPercent}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="mt-4 pt-4 border-t border-borde flex flex-wrap gap-2">
-                    {m.hasExam ? (
-                      <Badge className={EXAM_STATUS_COLOR[m.examStatus]}>
-                        Examen: {EXAM_STATUS_LABEL[m.examStatus]}
-                        {m.bestExamScore !== null ? ` (${m.bestExamScore}/70)` : ""}
-                      </Badge>
-                    ) : null}
-                    {m.hasSurvey ? (
-                      <Badge
-                        className={
-                          m.surveySubmitted
-                            ? "text-exito border-exito/40 bg-exito/15"
-                            : "text-ink-suave border-borde bg-borde/50"
-                        }
-                      >
-                        {m.surveySubmitted ? "Encuesta enviada" : "Encuesta pendiente"}
-                      </Badge>
-                    ) : null}
-                  </div>
-                </Card>
-              </Link>
-            );
-          })}
-        </div>
-      )}
     </main>
   );
 }
