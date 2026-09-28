@@ -153,3 +153,35 @@ export interface AssignProfessorToCohortInput {
   doctoralProfessorProfileId?: string;
   email?: string;
 }
+
+export interface ProfessorCohortMembership {
+  cohortId: string;
+  name: string;
+  programId: string;
+}
+
+export interface DoctoralProfessorListItem {
+  professorProfileId: string;
+  userId: string;
+  email: string;
+  displayName: string;
+  title: string | null;
+  status: AccountStatus;
+  cohorts: ProfessorCohortMembership[];
+}
+
+// --- Syllabus ---
+
+export interface ModuleSyllabus {
+  fileId: string;
+  fileName: string;
+  sizeBytes: number;
+}
+
+export interface ProgramModuleWithSyllabus {
+  moduleId: string;
+  title: string;
+  order: number;
+  semester: number;
+  syllabus: ModuleSyllabus | null;
+}

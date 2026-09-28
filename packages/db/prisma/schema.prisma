@@ -418,6 +418,13 @@ model ProgramModule {
   // pendiente de carga. Nunca se simula contenido como listo cuando no lo
   // está (ver README, tabla de trazabilidad).
   hasRealContent Boolean            @default(false)
+  // Syllabus descargable del módulo — sube el administrador o el docente
+  // asignado a una cohorte del programa; lo descarga cualquiera con acceso
+  // al módulo (alumno inscrito en cohorte, docente, administrador). Un solo
+  // archivo vigente por módulo: subir uno nuevo reemplaza al anterior (ver
+  // DoctoralSyllabusService).
+  syllabusFileId String?            @unique @db.Uuid
+  syllabusFile   DoctoralFile?      @relation("ModuleSyllabusFile", fields: [syllabusFileId], references: [id])
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
   deletedAt      DateTime?
@@ -842,6 +849,7 @@ model DoctoralFile {
 
   assignmentTemplates       DoctoralAssignment[]           @relation("AssignmentTemplateFile")
   assignmentSubmissionFiles DoctoralAssignmentSubmission[] @relation("SubmissionFile")
+  moduleAsSyllabus          ProgramModule?                 @relation("ModuleSyllabusFile")
 
   @@map("doctoral_files")
 }

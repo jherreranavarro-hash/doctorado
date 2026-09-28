@@ -1,4 +1,5 @@
 import { apiFetch } from "@/lib/api";
+import { fileToBase64 } from "@/lib/files";
 import type {
   AssignProfessorToCohortInput,
   CreateCohortInput,
@@ -10,9 +11,12 @@ import type {
   CreateStudentResult,
   DoctoralCohort,
   DoctoralOverview,
+  DoctoralProfessorListItem,
   DoctoralProgram,
   DoctoralStudentListItem,
+  ModuleSyllabus,
   ProgramModule,
+  ProgramModuleWithSyllabus,
   UpdateModuleInput,
   UpdateProgramInput,
 } from "../types";
@@ -162,4 +166,32 @@ export function assignProfessorToCohort(
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+export function listProfessors() {
+  return apiFetch<DoctoralProfessorListItem[]>("/doctoral-admin/professors");
+}
+
+export function removeProfessorFromCohort(cohortId: string, professorProfileId: string) {
+  return apiFetch(`/doctoral-admin/cohorts/${cohortId}/professors/${professorProfileId}`, {
+    method: "DELETE",
+  });
+}
+
+// --- Syllabus ---
+
+export function listModulesWithSyllabus(programId: string) {
+  return apiFetch<ProgramModuleWithSyllabus[]>(`/program-modules?programId=${programId}`);
+}
+
+export async function uploadSyllabus(moduleId: string, file: File) {
+  const base64Data = await fileToBase64(file);
+  return apiFetch<ModuleSyllabus & { moduleId: string }>(`/program-modules/${moduleId}/syllabus`, {
+    method: "POST",
+    body: JSON.stringify({ fileName: file.name, mimeType: file.type || "application/octet-stream", base64Data }),
+  });
+}
+
+export function deleteSyllabus(moduleId: string) {
+  return apiFetch(`/program-modules/${moduleId}/syllabus`, { method: "DELETE" });
 }

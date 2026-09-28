@@ -92,6 +92,13 @@ export interface ModuleDetail {
   surveySubmitted: boolean;
 }
 
+// --- GET /program-modules/:moduleId/syllabus/meta ---
+export interface ModuleSyllabus {
+  fileId: string;
+  fileName: string;
+  sizeBytes: number;
+}
+
 // --- GET /doctoral-learning/exercises/:exerciseId/hints ---
 export interface ExerciseHint {
   order: number;

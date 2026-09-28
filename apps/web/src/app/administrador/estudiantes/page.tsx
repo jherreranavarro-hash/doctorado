@@ -8,10 +8,12 @@ import { FormField } from "@/components/FormField";
 import {
   createStudent,
   deleteStudent,
+  enrollStudentInCohort,
   listCohorts,
   listPrograms,
   listStudents,
   reactivateStudent,
+  removeStudentFromCohort,
   suspendStudent,
   updateStudentName,
 } from "../_lib/api";
@@ -135,7 +137,13 @@ export default function EstudiantesPage() {
             </thead>
             <tbody>
               {students.map((s) => (
-                <StudentRow key={s.studentProfileId} student={s} cohortLabel={cohortLabel} onChanged={reload} />
+                <StudentRow
+                  key={s.studentProfileId}
+                  student={s}
+                  cohortLabel={cohortLabel}
+                  cohortOptions={cohortOptions}
+                  onChanged={reload}
+                />
               ))}
             </tbody>
           </table>
@@ -148,14 +156,18 @@ export default function EstudiantesPage() {
 function StudentRow({
   student,
   cohortLabel,
+  cohortOptions,
   onChanged,
 }: {
   student: DoctoralStudentListItem;
   cohortLabel: Map<string, string>;
+  cohortOptions: CohortOption[];
   onChanged: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [displayName, setDisplayName] = useState(student.displayName);
+  const [managingCohorts, setManagingCohorts] = useState(false);
+  const [pickCohortIds, setPickCohortIds] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -178,7 +190,31 @@ function StudentRow({
     setEditing(false);
   }
 
+  function toggleCohortId(cohortId: string) {
+    setPickCohortIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(cohortId)) next.delete(cohortId);
+      else next.add(cohortId);
+      return next;
+    });
+  }
+
+  async function onAddSelectedCohorts() {
+    const ids = Array.from(pickCohortIds);
+    if (ids.length === 0) return;
+    await run(async () => {
+      for (const cohortId of ids) {
+        await enrollStudentInCohort(student.studentProfileId, cohortId);
+      }
+    });
+    setPickCohortIds(new Set());
+  }
+
+  const assignedCohortIds = new Set(student.cohorts.map((c) => c.cohortId));
+  const addableCohorts = cohortOptions.filter((c) => !assignedCohortIds.has(c.cohortId));
+
   return (
+    <>
     <tr className="border-b border-borde align-top">
       <td className="py-2 pr-4">
         {editing ? (
@@ -214,7 +250,14 @@ function StudentRow({
       <td className="py-2 pr-4">
         {student.cohorts.length === 0
           ? "—"
-          : student.cohorts.map((c) => cohortLabel.get(c.cohortId) ?? c.name).join(", ")}
+          : student.cohorts.map((c) => cohortLabel.get(c.cohortId) ?? c.name).join(", ")}{" "}
+        <button
+          type="button"
+          className="text-xs text-azul2 underline"
+          onClick={() => setManagingCohorts((v) => !v)}
+        >
+          {managingCohorts ? "cerrar" : "gestionar"}
+        </button>
       </td>
       <td className="py-2 pr-4">
         {student.moduleEnrollments.length === 0 ? "—" : student.moduleEnrollments.length}
@@ -263,6 +306,61 @@ function StudentRow({
         </div>
       </td>
     </tr>
+    {managingCohorts ? (
+      <tr className="border-b border-borde bg-paper">
+        <td colSpan={6} className="py-3 px-4">
+          <div className="flex flex-col gap-3">
+            <div>
+              <p className="text-sm font-semibold text-ink mb-1">Cohortes actuales</p>
+              {student.cohorts.length === 0 ? (
+                <p className="text-sm text-ink-suave">Sin cohortes todavía.</p>
+              ) : (
+                <ul className="flex flex-col gap-1">
+                  {student.cohorts.map((c) => (
+                    <li key={c.cohortId} className="flex items-center gap-2 text-sm">
+                      <span>{cohortLabel.get(c.cohortId) ?? c.name}</span>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        className="text-xs text-peligro underline"
+                        onClick={() => run(() => removeStudentFromCohort(student.studentProfileId, c.cohortId))}
+                      >
+                        Quitar
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            {addableCohorts.length > 0 ? (
+              <div>
+                <p className="text-sm font-semibold text-ink mb-1">Agregar a cohortes</p>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2">
+                  {addableCohorts.map((c) => (
+                    <label key={c.cohortId} className="flex items-center gap-1.5 text-sm text-ink">
+                      <input
+                        type="checkbox"
+                        checked={pickCohortIds.has(c.cohortId)}
+                        onChange={() => toggleCohortId(c.cohortId)}
+                      />
+                      {c.programName} · {c.name}
+                    </label>
+                  ))}
+                </div>
+                <Button
+                  className="!min-h-8 !py-1 text-xs"
+                  disabled={busy || pickCohortIds.size === 0}
+                  onClick={onAddSelectedCohorts}
+                >
+                  Agregar {pickCohortIds.size > 0 ? `${pickCohortIds.size} cohorte(s)` : "cohortes seleccionadas"}
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        </td>
+      </tr>
+    ) : null}
+    </>
   );
 }
 

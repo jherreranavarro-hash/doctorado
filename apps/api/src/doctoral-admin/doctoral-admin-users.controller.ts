@@ -189,4 +189,25 @@ export class DoctoralAdminUsersController {
       dto,
     );
   }
+
+  @Get('professors')
+  listProfessors(@CurrentUser() user: AuthenticatedUser) {
+    const organizationId = resolveDoctoralAdminOrganizationId(user);
+    return this.doctoralAdminUsers.listProfessors(organizationId);
+  }
+
+  @Delete('cohorts/:cohortId/professors/:professorProfileId')
+  removeProfessorFromCohort(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('cohortId', ParseUUIDPipe) cohortId: string,
+    @Param('professorProfileId', ParseUUIDPipe) professorProfileId: string,
+  ) {
+    const organizationId = resolveDoctoralAdminOrganizationId(user);
+    return this.doctoralAdminUsers.removeProfessorFromCohort(
+      organizationId,
+      user.id,
+      cohortId,
+      professorProfileId,
+    );
+  }
 }

@@ -12,6 +12,7 @@ import { DoctoralAdminModule } from './doctoral-admin/doctoral-admin.module.js';
 import { DoctoralAnalyticsModule } from './doctoral-analytics/doctoral-analytics.module.js';
 import { DoctoralLearningModule } from './doctoral-learning/doctoral-learning.module.js';
 import { DoctoralAssignmentsModule } from './doctoral-assignments/doctoral-assignments.module.js';
+import { DoctoralSyllabusModule } from './doctoral-syllabus/doctoral-syllabus.module.js';
 import { SessionAuthGuard } from './common/guards/session-auth.guard.js';
 import { RolesGuard } from './common/guards/roles.guard.js';
 import { CsrfGuard } from './common/guards/csrf.guard.js';
@@ -34,6 +35,7 @@ import { CsrfGuard } from './common/guards/csrf.guard.js';
     DoctoralAnalyticsModule,
     DoctoralLearningModule,
     DoctoralAssignmentsModule,
+    DoctoralSyllabusModule,
   ],
   controllers: [AppController],
   providers: [

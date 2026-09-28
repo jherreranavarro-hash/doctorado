@@ -328,3 +328,19 @@ export interface UploadedFile {
   mimeType: string;
   sizeBytes: number;
 }
+
+// --- Syllabus (GET/POST/DELETE /program-modules) ---
+
+export interface ModuleSyllabus {
+  fileId: string;
+  fileName: string;
+  sizeBytes: number;
+}
+
+export interface ProgramModuleWithSyllabus {
+  moduleId: string;
+  title: string;
+  order: number;
+  semester: number;
+  syllabus: ModuleSyllabus | null;
+}

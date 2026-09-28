@@ -557,4 +557,67 @@ export class DoctoralAdminUsersService {
     );
     return link;
   }
+
+  async listProfessors(organizationId: string) {
+    const rows = await this.prisma.doctoralProfessorProfile.findMany({
+      where: { organizationId, deletedAt: null },
+      include: {
+        user: { select: { id: true, email: true, status: true } },
+        cohortMemberships: {
+          include: {
+            cohort: { select: { id: true, name: true, programId: true } },
+          },
+        },
+      },
+      orderBy: { displayName: 'asc' },
+    });
+
+    return rows.map((r) => ({
+      professorProfileId: r.id,
+      userId: r.user.id,
+      email: r.user.email,
+      displayName: r.displayName,
+      title: r.title,
+      status: r.user.status,
+      cohorts: r.cohortMemberships.map((ca) => ({
+        cohortId: ca.cohort.id,
+        name: ca.cohort.name,
+        programId: ca.cohort.programId,
+      })),
+    }));
+  }
+
+  async removeProfessorFromCohort(
+    organizationId: string,
+    actorUserId: string,
+    cohortId: string,
+    professorProfileId: string,
+  ) {
+    await this.resolveOrgScopedCohort(organizationId, cohortId);
+    await this.resolveOrgScopedProfessor(organizationId, professorProfileId);
+
+    const link = await this.prisma.doctoralCohortProfessor.findUnique({
+      where: {
+        cohortId_doctoralProfessorProfileId: {
+          cohortId,
+          doctoralProfessorProfileId: professorProfileId,
+        },
+      },
+    });
+    if (!link) {
+      throw new NotFoundException(
+        'Este docente no está asignado a esta cohorte',
+      );
+    }
+    await this.prisma.doctoralCohortProfessor.delete({
+      where: { id: link.id },
+    });
+    await this.audit(
+      actorUserId,
+      'doctoral_admin.cohort_professor.remove',
+      'doctoral_cohort_professor',
+      link.id,
+    );
+    return { cohortId, professorProfileId };
+  }
 }

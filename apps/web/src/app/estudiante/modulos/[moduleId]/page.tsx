@@ -2,16 +2,17 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { apiFetch, ApiError } from "@/lib/api";
+import { apiFetch, ApiError, API_BASE_URL } from "@/lib/api";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { Badge } from "../../_components/Badge";
 import { DIFFICULTY_COLOR, DIFFICULTY_LABEL, EXERCISE_TYPE_LABEL } from "../../_lib/format";
-import type { ModuleDetail } from "../../types";
+import type { ModuleDetail, ModuleSyllabus } from "../../types";
 
 export default function ModuleDetailPage(props: PageProps<"/estudiante/modulos/[moduleId]">) {
   const { moduleId } = use(props.params);
   const [moduleData, setModuleData] = useState<ModuleDetail | null>(null);
+  const [syllabus, setSyllabus] = useState<ModuleSyllabus | null>(null);
   const [error, setError] = useState<string>();
 
   useEffect(() => {
@@ -24,6 +25,11 @@ export default function ModuleDetailPage(props: PageProps<"/estudiante/modulos/[
         if (cancelled) return;
         setError(err instanceof ApiError ? err.message : "No se pudo cargar el módulo");
       });
+    apiFetch<ModuleSyllabus | null>(`/program-modules/${moduleId}/syllabus/meta`)
+      .then((data) => {
+        if (!cancelled) setSyllabus(data);
+      })
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -52,7 +58,19 @@ export default function ModuleDetailPage(props: PageProps<"/estudiante/modulos/[
       <Link href="/estudiante" className="text-azul2 font-semibold link-pill">
         ← Mis módulos
       </Link>
-      <h1 className="text-2xl font-bold text-navy-txt mt-2 mb-6">{moduleData.title}</h1>
+      <h1 className="text-2xl font-bold text-navy-txt mt-2 mb-1">{moduleData.title}</h1>
+      {syllabus ? (
+        <a
+          href={`${API_BASE_URL}/program-modules/${moduleData.moduleId}/syllabus`}
+          target="_blank"
+          rel="noopener"
+          className="text-azul2 underline text-sm inline-block mb-6"
+        >
+          Descargar syllabus ({syllabus.fileName})
+        </a>
+      ) : (
+        <p className="mb-6" />
+      )}
 
       <div className="flex flex-col gap-8">
         {moduleData.topics.map((topic) => (

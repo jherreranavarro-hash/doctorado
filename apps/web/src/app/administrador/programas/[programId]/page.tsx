@@ -1,9 +1,9 @@
 "use client";
 
-import { use, useEffect, useState, type FormEvent } from "react";
+import { use, useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import Link from "next/link";
 import { DOCTORAL_MODULE_TYPES, type DoctoralModuleType } from "@doctorado/shared";
-import { ApiError } from "@/lib/api";
+import { ApiError, API_BASE_URL } from "@/lib/api";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { FormField } from "@/components/FormField";
@@ -11,16 +11,25 @@ import {
   createCohort,
   createModule,
   deleteModule,
+  deleteSyllabus,
   listCohorts,
   listModules,
+  listModulesWithSyllabus,
   listPrograms,
   updateModule,
   updateProgram,
+  uploadSyllabus,
 } from "../../_lib/api";
 import { ErrorText } from "../../_components/ErrorText";
 import { ContentBadge } from "../../_components/ContentBadge";
 import { MODULE_TYPE_LABELS } from "../../_lib/labels";
-import type { CreateModuleInput, DoctoralCohort, DoctoralProgram, ProgramModule } from "../../types";
+import type {
+  CreateModuleInput,
+  DoctoralCohort,
+  DoctoralProgram,
+  ModuleSyllabus,
+  ProgramModule,
+} from "../../types";
 
 export default function ProgramaDetailPage(props: PageProps<"/administrador/programas/[programId]">) {
   const { programId } = use(props.params);
@@ -176,6 +185,13 @@ function ModulesSection({
   onChanged: () => void;
 }) {
   const [creating, setCreating] = useState(false);
+  const [syllabusByModule, setSyllabusByModule] = useState<Map<string, ModuleSyllabus | null>>(new Map());
+
+  useEffect(() => {
+    listModulesWithSyllabus(programId)
+      .then((rows) => setSyllabusByModule(new Map(rows.map((r) => [r.moduleId, r.syllabus]))))
+      .catch(() => setSyllabusByModule(new Map()));
+  }, [programId, modules]);
 
   return (
     <section className="flex flex-col gap-4">
@@ -207,7 +223,13 @@ function ModulesSection({
       ) : (
         <div className="flex flex-col gap-3">
           {modules.map((module_) => (
-            <ModuleRow key={module_.id} programId={programId} module_={module_} onChanged={onChanged} />
+            <ModuleRow
+              key={module_.id}
+              programId={programId}
+              module_={module_}
+              syllabus={syllabusByModule.get(module_.id) ?? null}
+              onChanged={onChanged}
+            />
           ))}
         </div>
       )}
@@ -218,10 +240,12 @@ function ModulesSection({
 function ModuleRow({
   programId,
   module_,
+  syllabus,
   onChanged,
 }: {
   programId: string;
   module_: ProgramModule;
+  syllabus: ModuleSyllabus | null;
   onChanged: () => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -280,7 +304,79 @@ function ModuleRow({
           Eliminar
         </Button>
       </div>
+      <SyllabusControl moduleId={module_.id} syllabus={syllabus} onChanged={onChanged} />
     </Card>
+  );
+}
+
+function SyllabusControl({
+  moduleId,
+  syllabus,
+  onChanged,
+}: {
+  moduleId: string;
+  syllabus: ModuleSyllabus | null;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+
+  async function onUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      await uploadSyllabus(moduleId, file);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No se pudo subir el syllabus");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onDelete() {
+    if (!confirm("¿Quitar el syllabus de este módulo?")) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      await deleteSyllabus(moduleId);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No se pudo quitar el syllabus");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="border-t border-borde pt-2 flex items-center gap-3 flex-wrap text-sm">
+      <span className="font-semibold text-ink">Syllabus:</span>
+      {syllabus ? (
+        <>
+          <a
+            href={`${API_BASE_URL}/program-modules/${moduleId}/syllabus`}
+            target="_blank"
+            rel="noopener"
+            className="text-azul2 underline"
+          >
+            {syllabus.fileName}
+          </a>
+          <button type="button" disabled={busy} className="text-xs text-peligro underline" onClick={onDelete}>
+            Quitar
+          </button>
+        </>
+      ) : (
+        <span className="text-ink-suave">Sin syllabus todavía</span>
+      )}
+      <label className="text-xs text-azul2 underline cursor-pointer">
+        {syllabus ? "Reemplazar archivo" : "Subir archivo"}
+        <input type="file" className="hidden" disabled={busy} onChange={onUpload} />
+      </label>
+      <ErrorText message={error} />
+    </div>
   );
 }
 

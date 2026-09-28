@@ -12,9 +12,11 @@ import {
   listCohorts,
   listModules,
   listPrograms,
+  listProfessors,
   listStudents,
   reactivateStudent,
   removeModuleEnrollment,
+  removeProfessorFromCohort,
   removeStudentFromCohort,
   suspendStudent,
   updateStudentName,
@@ -22,7 +24,13 @@ import {
 import { ErrorText } from "../../_components/ErrorText";
 import { StatusBadge } from "../../_components/StatusBadge";
 import { MODULE_ENROLLMENT_STATUS_LABELS } from "../../_lib/labels";
-import type { DoctoralCohort, DoctoralProgram, DoctoralStudentListItem, ProgramModule } from "../../types";
+import type {
+  DoctoralCohort,
+  DoctoralProfessorListItem,
+  DoctoralProgram,
+  DoctoralStudentListItem,
+  ProgramModule,
+} from "../../types";
 
 export default function CohorteDetailPage(props: PageProps<"/administrador/cohortes/[cohortId]">) {
   const { cohortId } = use(props.params);
@@ -165,9 +173,29 @@ function StudentRow({
 }) {
   const [editingName, setEditingName] = useState(false);
   const [displayName, setDisplayName] = useState(student.displayName);
-  const [pickModuleId, setPickModuleId] = useState("");
+  const [pickModuleIds, setPickModuleIds] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+
+  function toggleModuleId(moduleId: string) {
+    setPickModuleIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(moduleId)) next.delete(moduleId);
+      else next.add(moduleId);
+      return next;
+    });
+  }
+
+  async function onLinkSelectedModules() {
+    const ids = Array.from(pickModuleIds);
+    if (ids.length === 0) return;
+    await run(async () => {
+      for (const moduleId of ids) {
+        await enrollStudentInModule(student.studentProfileId, moduleId);
+      }
+    });
+    setPickModuleIds(new Set());
+  }
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
@@ -297,28 +325,25 @@ function StudentRow({
           </ul>
         )}
         {linkableModules.length > 0 ? (
-          <div className="flex items-center gap-2 flex-wrap">
-            <select
-              value={pickModuleId}
-              onChange={(e) => setPickModuleId(e.target.value)}
-              className="rounded-[var(--radius-sm)] border border-borde bg-paper px-2 py-1 text-sm"
-            >
-              <option value="">Selecciona un módulo…</option>
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
               {linkableModules.map((m) => (
-                <option key={m.id} value={m.id}>
+                <label key={m.id} className="flex items-center gap-1.5 text-sm text-ink">
+                  <input
+                    type="checkbox"
+                    checked={pickModuleIds.has(m.id)}
+                    onChange={() => toggleModuleId(m.id)}
+                  />
                   {m.order}. {m.title}
-                </option>
+                </label>
               ))}
-            </select>
+            </div>
             <Button
-              className="!min-h-8 !py-1 text-xs"
-              disabled={busy || !pickModuleId}
-              onClick={() => {
-                run(() => enrollStudentInModule(student.studentProfileId, pickModuleId));
-                setPickModuleId("");
-              }}
+              className="!min-h-8 !py-1 text-xs w-fit"
+              disabled={busy || pickModuleIds.size === 0}
+              onClick={onLinkSelectedModules}
             >
-              Vincular módulo
+              Vincular {pickModuleIds.size > 0 ? `${pickModuleIds.size} módulo(s) seleccionado(s)` : "módulos seleccionados"}
             </Button>
           </div>
         ) : null}
@@ -332,6 +357,18 @@ function AssignProfessorSection({ cohortId, onChanged }: { cohortId: string; onC
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string>();
   const [success, setSuccess] = useState<string>();
+  const [professors, setProfessors] = useState<DoctoralProfessorListItem[] | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [removeError, setRemoveError] = useState<string>();
+  const [removingId, setRemovingId] = useState<string>();
+
+  useEffect(() => {
+    listProfessors()
+      .then(setProfessors)
+      .catch(() => setProfessors([]));
+  }, [reloadKey]);
+
+  const assigned = (professors ?? []).filter((p) => p.cohorts.some((c) => c.cohortId === cohortId));
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -342,6 +379,7 @@ function AssignProfessorSection({ cohortId, onChanged }: { cohortId: string; onC
       await assignProfessorToCohort(cohortId, { email: email.trim() });
       setSuccess(`Se asignó a ${email.trim()} a esta cohorte.`);
       setEmail("");
+      setReloadKey((n) => n + 1);
       onChanged();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "No se pudo asignar el docente");
@@ -350,19 +388,50 @@ function AssignProfessorSection({ cohortId, onChanged }: { cohortId: string; onC
     }
   }
 
+  async function onRemove(professorProfileId: string) {
+    setRemoveError(undefined);
+    setRemovingId(professorProfileId);
+    try {
+      await removeProfessorFromCohort(cohortId, professorProfileId);
+      setReloadKey((n) => n + 1);
+      onChanged();
+    } catch (err) {
+      setRemoveError(err instanceof ApiError ? err.message : "No se pudo quitar al docente");
+    } finally {
+      setRemovingId(undefined);
+    }
+  }
+
   return (
     <section className="flex flex-col gap-3">
       <h2 className="text-xl font-bold text-navy-txt">Docentes asignados</h2>
       <Card className="flex flex-col gap-3">
-        <p className="text-sm text-ink-suave">
-          El backend todavía no expone un listado de docentes ya asignados a una cohorte (solo
-          permite asignar por correo) — ver nota en el reporte de esta entrega. Mientras tanto,
-          usa este formulario para asignar; para confirmar quién quedó asignado, revisa con el
-          propio docente o la base de datos.
-        </p>
-        <form onSubmit={onSubmit} className="flex items-end gap-3 flex-wrap">
+        {!professors ? (
+          <p className="text-sm text-ink-suave">Cargando docentes…</p>
+        ) : assigned.length === 0 ? (
+          <p className="text-sm text-ink-suave">Todavía no hay docentes asignados a esta cohorte.</p>
+        ) : (
+          <ul className="flex flex-col gap-1">
+            {assigned.map((p) => (
+              <li key={p.professorProfileId} className="flex items-center gap-2 text-sm">
+                <span className="font-semibold text-ink">{p.displayName}</span>
+                <span className="text-ink-suave">{p.email}</span>
+                <button
+                  type="button"
+                  disabled={removingId === p.professorProfileId}
+                  className="text-xs text-peligro underline"
+                  onClick={() => onRemove(p.professorProfileId)}
+                >
+                  Quitar
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <ErrorText message={removeError} />
+        <form onSubmit={onSubmit} className="flex items-end gap-3 flex-wrap border-t border-borde pt-3">
           <FormField
-            label="Correo del docente"
+            label="Correo del docente a asignar"
             type="email"
             name="professorEmail"
             required
