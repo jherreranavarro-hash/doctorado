@@ -1,0 +1,19 @@
+# Configuración explícita de fases para Railway/Nixpacks — el monorepo pnpm
+# necesita instalar y construir desde la raíz, y la auto-detección de
+# Nixpacks (fase "install" implícita) choca con corepack en este entorno.
+# (Mismo patrón probado en producción para aventuras-del-estudio.)
+[phases.setup]
+nixPkgs = ["nodejs_22"]
+
+[phases.install]
+cmds = [
+  "corepack enable",
+  "corepack prepare pnpm@11.20.0 --activate",
+  "pnpm install --frozen-lockfile",
+]
+
+[phases.build]
+cmds = ["pnpm exec turbo run build --filter=@doctorado/api..."]
+
+[start]
+cmd = "pnpm --filter @doctorado/db migrate:deploy && pnpm --filter @doctorado/db seed && node apps/api/dist/main.js"

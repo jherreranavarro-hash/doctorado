@@ -1417,11 +1417,13 @@ const PSICOLOGIA_MODULES: Array<{
   },
 ];
 
+export const DOCTORADOS_ORGANIZATION_SLUG = "doctorados-posgrado";
+
 export async function seedDoctoral(prisma: PrismaClient): Promise<void> {
   const organization = await prisma.organization.upsert({
-    where: { slug: "doctorados-posgrado" },
+    where: { slug: DOCTORADOS_ORGANIZATION_SLUG },
     update: {},
-    create: { name: "Escuela de Posgrado — Doctorados", slug: "doctorados-posgrado" },
+    create: { name: "Escuela de Posgrado — Doctorados", slug: DOCTORADOS_ORGANIZATION_SLUG },
   });
 
   const psicologia = await prisma.doctoralProgram.upsert({

@@ -1,0 +1,17 @@
+# El CLI de Vercel no respeta .gitignore al subir el directorio local —
+# sin este archivo, sube artefactos de build/caché locales (p. ej. la caché
+# de Turborepo, cientos de MB) además del código fuente real.
+node_modules/
+.pnpm-store/
+.next/
+dist/
+build/
+.turbo/
+out/
+coverage/
+playwright-report/
+test-results/
+apps/api/generated/
+packages/db/generated/
+*.log
+.git/

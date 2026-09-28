@@ -18,6 +18,10 @@ decisión de la extracción.
 - **Administrador**: mantenedor completo de programas, módulos, cohortes, estudiantes y docentes; vincula módulos a
   estudiantes.
 
+## Despliegue
+
+Vercel (`apps/web`) + Railway (`apps/api` + Postgres) — ver [`DEPLOY.md`](DEPLOY.md) para el paso a paso completo.
+
 ## Stack
 
 - **Backend**: NestJS + Prisma + PostgreSQL. Sesión por cookie HttpOnly (`sid`/`rt`, rotación de refresh token con
