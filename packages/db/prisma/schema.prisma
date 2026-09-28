@@ -1,0 +1,955 @@
+// Esquema de datos de Doctorado — extraído del monorepo "Aventuras del
+// Estudio" (dominio "Dominio Doctorado" allí) como proyecto standalone.
+//
+// Convención: los modelos usan nombres PascalCase idiomáticos de Prisma, pero
+// cada modelo se mapea vía @@map al nombre de tabla snake_case. Las columnas
+// se dejan en camelCase (Prisma idiomático) sin @map por columna. Todas las
+// tablas usan UUID como PK, created_at/updated_at donde aplica, y borrado
+// lógico (deletedAt) en entidades editoriales/de membresía.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// Enums — identidad
+// ============================================================================
+
+enum UserStatus {
+  active
+  suspended
+  pending
+
+  @@map("user_status")
+}
+
+// Reutilizado por el contenido conceptual/ejercicios del dominio doctoral
+// (draft → published es lo único que se usa hoy; el resto del ciclo queda
+// disponible para un flujo editorial futuro).
+enum PublicationState {
+  draft
+  in_review
+  approved
+  published
+  rejected
+  archived
+
+  @@map("publication_state")
+}
+
+// ============================================================================
+// Identidad y tenencia
+// ============================================================================
+
+model Organization {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  userRoles UserRole[]
+
+  doctoralPrograms          DoctoralProgram[]
+  doctoralStudentProfiles   DoctoralStudentProfile[]
+  doctoralProfessorProfiles DoctoralProfessorProfile[]
+
+  @@map("organizations")
+}
+
+model User {
+  id              String     @id @default(uuid()) @db.Uuid
+  email           String     @unique
+  passwordHash    String
+  status          UserStatus @default(pending)
+  emailVerifiedAt DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  deletedAt       DateTime?
+
+  doctoralStudentProfile   DoctoralStudentProfile?
+  doctoralProfessorProfile DoctoralProfessorProfile?
+  userRoles                UserRole[]
+  sessions                 Session[]
+  passwordResetTokens      PasswordResetToken[]
+  emailVerifications       EmailVerification[]
+  auditLogsAsActor         AuditLog[]
+  securityEvents           SecurityEvent[]
+
+  @@map("users")
+}
+
+// Normalizado (Role/UserRole), no un enum en User — un usuario puede tener
+// distintos roles en distintas organizaciones. Sin Permission/RolePermission:
+// la app autoriza por role.key directamente (ver RolesGuard), no por permiso
+// fino — se omiten aquí por no tener ningún uso real todavía.
+model Role {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique // doctoral_student | doctoral_professor | doctoral_admin
+  label     String
+  createdAt DateTime @default(now())
+
+  userRoles UserRole[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  id             String       @id @default(uuid()) @db.Uuid
+  user           User         @relation(fields: [userId], references: [id])
+  userId         String       @db.Uuid
+  role           Role         @relation(fields: [roleId], references: [id])
+  roleId         String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String       @db.Uuid
+  createdAt      DateTime     @default(now())
+
+  @@unique([userId, roleId, organizationId])
+  @@index([organizationId])
+  @@map("user_roles")
+}
+
+model Session {
+  id               String    @id @default(uuid()) @db.Uuid
+  user             User      @relation(fields: [userId], references: [id])
+  userId           String    @db.Uuid
+  refreshTokenHash String
+  userAgent        String?
+  ipHash           String?
+  createdAt        DateTime  @default(now())
+  expiresAt        DateTime
+  refreshExpiresAt DateTime
+  revokedAt        DateTime?
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model AuditLog {
+  id            String   @id @default(uuid()) @db.Uuid
+  actor         User?    @relation(fields: [actorUserId], references: [id])
+  actorUserId   String?  @db.Uuid
+  action        String
+  entityType    String?
+  entityId      String?  @db.Uuid
+  ipHash        String?
+  correlationId String?
+  metadata      Json?
+  occurredAt    DateTime @default(now())
+
+  @@index([actorUserId, occurredAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+model SecurityEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  user       User?    @relation(fields: [userId], references: [id])
+  userId     String?  @db.Uuid
+  eventType  String
+  severity   String
+  ipHash     String?
+  metadata   Json?
+  occurredAt DateTime @default(now())
+
+  @@index([userId, occurredAt])
+  @@map("security_events")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  user      User      @relation(fields: [userId], references: [id])
+  userId    String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+model EmailVerification {
+  id         String    @id @default(uuid()) @db.Uuid
+  user       User      @relation(fields: [userId], references: [id])
+  userId     String    @db.Uuid
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  verifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@map("email_verifications")
+}
+
+// ============================================================================
+// Dominio Doctorado — plataforma de posgrado (estudiante / docente / admin)
+// ============================================================================
+//
+// Dominio nuevo, separado del K-12 de arriba, que reutiliza la misma
+// infraestructura (User/Session/RBAC, Organization como límite de tenencia,
+// convención UUID + soft-delete + @@map) pero con sus propios perfiles
+// (DoctoralStudentProfile/DoctoralProfessorProfile) y sus propios roles
+// (doctoral_student | doctoral_professor | doctoral_admin, ver
+// packages/shared/src/roles.ts) porque los roles K-12 no aplican aquí — un
+// User puede tener ambos conjuntos de roles si corresponde, cada uno en su
+// propia Organization (UserRole ya soporta esto sin cambios).
+//
+// Jerarquía: Organization → DoctoralProgram (ej. "Doctorado en Psicología")
+// → ProgramModule (asignatura de la malla, ej. "Psicología y
+// Transformaciones Sociales I") → ModuleTopic (tema/modelo conceptual) →
+// DoctoralExercise (ejercicio progresivo con pistas). Un DoctoralCohort
+// agrupa estudiantes+docentes de un programa (ej. "Cohorte 2026"),
+// análogo a Classroom del lado K-12.
+
+// --- Enums ---
+
+enum DoctoralModuleType {
+  course
+  workshop
+  seminar
+  tutoring
+  elective
+  thesis_project
+  thesis
+  qualifying_exam
+
+  @@map("doctoral_module_type")
+}
+
+// Escala de dificultad propia del doctorado (progresión "simple → muy
+// complejo" pedida por el encargo) — deliberadamente distinta de Difficulty
+// (facil/medio/dificil), que es del dominio K-12.
+enum DoctoralDifficulty {
+  introductorio
+  intermedio
+  avanzado
+  experto
+
+  @@map("doctoral_difficulty")
+}
+
+enum DoctoralExerciseType {
+  mc // selección múltiple, corrección determinística server-side
+  short_answer // respuesta corta, evaluada por el motor semántico
+  case_analysis // análisis de caso/escenario, evaluado por el motor semántico
+
+  @@map("doctoral_exercise_type")
+}
+
+enum DoctoralModuleEnrollmentStatus {
+  in_progress
+  completed
+  withdrawn
+
+  @@map("doctoral_module_enrollment_status")
+}
+
+enum DoctoralExamAttemptStatus {
+  in_progress
+  submitted
+  expired
+
+  @@map("doctoral_exam_attempt_status")
+}
+
+enum DoctoralSurveyQuestionType {
+  likert_1_5
+  short_answer
+
+  @@map("doctoral_survey_question_type")
+}
+
+enum DoctoralAssignmentStatus {
+  draft
+  published
+  closed
+
+  @@map("doctoral_assignment_status")
+}
+
+enum DoctoralAssignmentQuestionType {
+  mc
+  short_answer
+  essay
+  file_upload
+
+  @@map("doctoral_assignment_question_type")
+}
+
+enum DoctoralAssignmentSubmissionStatus {
+  draft
+  submitted
+  graded
+
+  @@map("doctoral_assignment_submission_status")
+}
+
+// --- Programas, cohortes, perfiles ---
+
+model DoctoralProgram {
+  id             String       @id @default(uuid()) @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String       @db.Uuid
+  key            String       @unique // ej. "psicologia" | "psicologia_salud_calidad_vida"
+  name           String
+  institution    String? // ej. "Pontificia Universidad Católica de Valparaíso"
+  totalSemesters Int          @default(8)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  deletedAt      DateTime?
+
+  modules         ProgramModule[]
+  cohorts         DoctoralCohort[]
+  competencyAreas CompetencyArea[]
+
+  @@index([organizationId])
+  @@map("doctoral_programs")
+}
+
+model DoctoralCohort {
+  id        String          @id @default(uuid()) @db.Uuid
+  program   DoctoralProgram @relation(fields: [programId], references: [id])
+  programId String          @db.Uuid
+  name      String // ej. "Cohorte 2026"
+  startYear Int
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  deletedAt DateTime?
+
+  students     DoctoralCohortStudent[]
+  professors   DoctoralCohortProfessor[]
+  assignments  DoctoralAssignment[]
+  studentGroups DoctoralStudentGroup[]
+
+  @@index([programId])
+  @@map("doctoral_cohorts")
+}
+
+model DoctoralStudentProfile {
+  id             String       @id @default(uuid()) @db.Uuid
+  user           User         @relation(fields: [userId], references: [id])
+  userId         String       @unique @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String       @db.Uuid
+  displayName    String
+  enrolledAt     DateTime     @default(now())
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  deletedAt      DateTime?
+
+  cohortMemberships      DoctoralCohortStudent[]
+  moduleEnrollments      DoctoralModuleEnrollment[]
+  exerciseAttempts       DoctoralExerciseAttempt[]
+  examAttempts           DoctoralExamAttempt[]
+  surveyResponses        DoctoralModuleSurveyResponse[]
+  competencyScores       DoctoralStudentCompetencyScore[]
+  assignmentSubmissions  DoctoralAssignmentSubmission[]
+  assignmentTargets      DoctoralAssignmentTarget[]
+  studentGroupMemberships DoctoralStudentGroupMember[]
+
+  @@index([organizationId])
+  @@map("doctoral_student_profiles")
+}
+
+model DoctoralProfessorProfile {
+  id             String       @id @default(uuid()) @db.Uuid
+  user           User         @relation(fields: [userId], references: [id])
+  userId         String       @unique @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String       @db.Uuid
+  displayName    String
+  title          String? // ej. "Dra.", "Dr."
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  deletedAt      DateTime?
+
+  cohortMemberships DoctoralCohortProfessor[]
+  assignments       DoctoralAssignment[]
+
+  @@index([organizationId])
+  @@map("doctoral_professor_profiles")
+}
+
+model DoctoralCohortStudent {
+  id                       String                 @id @default(uuid()) @db.Uuid
+  cohort                   DoctoralCohort         @relation(fields: [cohortId], references: [id])
+  cohortId                 String                 @db.Uuid
+  student                  DoctoralStudentProfile @relation(fields: [doctoralStudentProfileId], references: [id])
+  doctoralStudentProfileId String                 @db.Uuid
+  createdAt                DateTime               @default(now())
+
+  @@unique([cohortId, doctoralStudentProfileId])
+  @@map("doctoral_cohort_students")
+}
+
+model DoctoralCohortProfessor {
+  id                         String                   @id @default(uuid()) @db.Uuid
+  cohort                     DoctoralCohort           @relation(fields: [cohortId], references: [id])
+  cohortId                   String                   @db.Uuid
+  professor                  DoctoralProfessorProfile @relation(fields: [doctoralProfessorProfileId], references: [id])
+  doctoralProfessorProfileId String                   @db.Uuid
+  createdAt                  DateTime                 @default(now())
+
+  @@unique([cohortId, doctoralProfessorProfileId])
+  @@map("doctoral_cohort_professors")
+}
+
+// --- Currículo: módulos, temas, contenido conceptual ---
+
+model ProgramModule {
+  id             String             @id @default(uuid()) @db.Uuid
+  program        DoctoralProgram    @relation(fields: [programId], references: [id])
+  programId      String             @db.Uuid
+  code           String? // ej. "DPSI-7216" (malla PUCV); null en asignaturas optativas genéricas
+  title          String
+  semester       Int
+  credits        Int
+  type           DoctoralModuleType @default(course)
+  order          Int
+  // true solo en módulos con contenido conceptual/ejercicios ya redactados
+  // (Fase 1 de esta pasada) — false = estructura real de la malla, contenido
+  // pendiente de carga. Nunca se simula contenido como listo cuando no lo
+  // está (ver README, tabla de trazabilidad).
+  hasRealContent Boolean            @default(false)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  deletedAt      DateTime?
+
+  topics            ModuleTopic[]
+  exam              DoctoralExam?
+  survey            DoctoralModuleSurvey?
+  moduleEnrollments DoctoralModuleEnrollment[]
+  assignments       DoctoralAssignment[]
+
+  @@unique([programId, order])
+  @@index([programId, semester])
+  @@map("program_modules")
+}
+
+model ModuleTopic {
+  id        String        @id @default(uuid()) @db.Uuid
+  module    ProgramModule @relation(fields: [moduleId], references: [id])
+  moduleId  String        @db.Uuid
+  key       String
+  title     String
+  order     Int
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  deletedAt DateTime?
+
+  conceptContent    ModuleConceptContent?
+  exercises         DoctoralExercise[]
+  competencyWeights TopicCompetencyWeight[]
+
+  @@unique([moduleId, key])
+  @@map("module_topics")
+}
+
+// Contenido de enseñanza del modelo conceptual del tema — pensado para ser
+// simple de aprender (resumen + ideas clave) antes de pasar a la práctica.
+model ModuleConceptContent {
+  id          String           @id @default(uuid()) @db.Uuid
+  topic       ModuleTopic      @relation(fields: [topicId], references: [id])
+  topicId     String           @unique @db.Uuid
+  version     Int              @default(1)
+  status      PublicationState @default(draft)
+  summary     String
+  body        String // contenido conceptual completo (markdown)
+  keyIdeas    Json // string[] — ideas clave / mapa conceptual simplificado
+  createdBy   String?          @db.Uuid
+  publishedAt DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@map("module_concept_contents")
+}
+
+// --- Ejercicios prácticos progresivos (con pistas) ---
+
+model DoctoralExercise {
+  id          String               @id @default(uuid()) @db.Uuid
+  topic       ModuleTopic          @relation(fields: [topicId], references: [id])
+  topicId     String               @db.Uuid
+  key         String
+  type        DoctoralExerciseType
+  difficulty  DoctoralDifficulty
+  order       Int
+  scenario    String? // contexto/caso clínico o de investigación, si aplica
+  statement   String
+  // Rúbrica de corrección server-side, nunca expuesta al cliente antes de
+  // cerrar el intento: para "mc" no se usa (ver DoctoralExerciseOption);
+  // para short_answer/case_analysis: { keyPoints: string[], keywords:
+  // string[] } que consume el motor semántico heurístico.
+  modelAnswer Json?
+  status      PublicationState     @default(draft)
+  createdBy   String?              @db.Uuid
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  options           DoctoralExerciseOption[]
+  hints             DoctoralExerciseHint[]
+  attempts          DoctoralExerciseAttempt[]
+  competencyWeights ExerciseCompetencyWeight[]
+
+  @@unique([topicId, key])
+  @@index([topicId, difficulty])
+  @@map("doctoral_exercises")
+}
+
+model DoctoralExerciseOption {
+  id         String           @id @default(uuid()) @db.Uuid
+  exercise   DoctoralExercise @relation(fields: [exerciseId], references: [id])
+  exerciseId String           @db.Uuid
+  optionKey  String
+  text       String
+  isCorrect  Boolean
+  order      Int
+
+  @@map("doctoral_exercise_options")
+}
+
+// Pistas reveladas progresivamente (order 1 = más sutil) — solo en
+// ejercicios de práctica; el examen final del módulo NUNCA tiene pistas
+// (ver DoctoralExam, "prueba sin ayuda").
+model DoctoralExerciseHint {
+  id         String           @id @default(uuid()) @db.Uuid
+  exercise   DoctoralExercise @relation(fields: [exerciseId], references: [id])
+  exerciseId String           @db.Uuid
+  order      Int
+  text       String
+
+  @@unique([exerciseId, order])
+  @@map("doctoral_exercise_hints")
+}
+
+model DoctoralExerciseAttempt {
+  id                       String                 @id @default(uuid()) @db.Uuid
+  student                  DoctoralStudentProfile @relation(fields: [doctoralStudentProfileId], references: [id])
+  doctoralStudentProfileId String                 @db.Uuid
+  exercise                 DoctoralExercise       @relation(fields: [exerciseId], references: [id])
+  exerciseId               String                 @db.Uuid
+  attemptNumber            Int
+  hintsUsed                Int                    @default(0)
+  responseText             String? // short_answer / case_analysis
+  selectedOptionKey        String? // mc
+  isCorrect                Boolean? // mc: determinístico; otros: derivado del umbral del motor semántico
+  semanticScore            Float? // 0-100, salida del motor semántico heurístico (solo tipos no-mc)
+  feedback                 String? // retro generada por el motor: qué cubrió / qué faltó
+  createdAt                DateTime               @default(now())
+
+  competencyResults DoctoralAttemptCompetencyResult[]
+
+  @@index([doctoralStudentProfileId, exerciseId])
+  @@map("doctoral_exercise_attempts")
+}
+
+model DoctoralModuleEnrollment {
+  id                       String                         @id @default(uuid()) @db.Uuid
+  student                  DoctoralStudentProfile         @relation(fields: [doctoralStudentProfileId], references: [id])
+  doctoralStudentProfileId String                         @db.Uuid
+  module                   ProgramModule                  @relation(fields: [moduleId], references: [id])
+  moduleId                 String                         @db.Uuid
+  status                   DoctoralModuleEnrollmentStatus @default(in_progress)
+  enrolledAt               DateTime                       @default(now())
+  completedAt              DateTime?
+
+  @@unique([doctoralStudentProfileId, moduleId])
+  @@map("doctoral_module_enrollments")
+}
+
+// --- Competencias (ejes del mapa de calor) y KPIs ---
+
+// Ejes semánticos transversales usados para medir al estudiante "sin que se
+// entere" (mapeados desde ejercicios/preguntas de examen, no un ejercicio
+// aparte) — ej. "Pensamiento crítico", "Rigor metodológico", "Ética de
+// investigación". Son la base del mapa de calor docente.
+model CompetencyArea {
+  id          String          @id @default(uuid()) @db.Uuid
+  program     DoctoralProgram @relation(fields: [programId], references: [id])
+  programId   String          @db.Uuid
+  key         String
+  label       String
+  description String?
+  createdAt   DateTime        @default(now())
+
+  topicWeights        TopicCompetencyWeight[]
+  exerciseWeights     ExerciseCompetencyWeight[]
+  examQuestionWeights DoctoralExamQuestionCompetencyWeight[]
+  studentScores       DoctoralStudentCompetencyScore[]
+  attemptResults      DoctoralAttemptCompetencyResult[]
+
+  @@unique([programId, key])
+  @@map("competency_areas")
+}
+
+model TopicCompetencyWeight {
+  id               String         @id @default(uuid()) @db.Uuid
+  topic            ModuleTopic    @relation(fields: [topicId], references: [id])
+  topicId          String         @db.Uuid
+  competency       CompetencyArea @relation(fields: [competencyAreaId], references: [id])
+  competencyAreaId String         @db.Uuid
+  weight           Float          @default(1)
+
+  @@unique([topicId, competencyAreaId])
+  @@map("topic_competency_weights")
+}
+
+model ExerciseCompetencyWeight {
+  id               String           @id @default(uuid()) @db.Uuid
+  exercise         DoctoralExercise @relation(fields: [exerciseId], references: [id])
+  exerciseId       String           @db.Uuid
+  competency       CompetencyArea   @relation(fields: [competencyAreaId], references: [id])
+  competencyAreaId String           @db.Uuid
+  weight           Float            @default(1)
+
+  @@unique([exerciseId, competencyAreaId])
+  @@map("exercise_competency_weights")
+}
+
+model DoctoralAttemptCompetencyResult {
+  id               String                  @id @default(uuid()) @db.Uuid
+  attempt          DoctoralExerciseAttempt @relation(fields: [attemptId], references: [id])
+  attemptId        String                  @db.Uuid
+  competency       CompetencyArea          @relation(fields: [competencyAreaId], references: [id])
+  competencyAreaId String                  @db.Uuid
+  score            Float // 0-100 para esa competencia en este intento
+
+  @@unique([attemptId, competencyAreaId])
+  @@map("doctoral_attempt_competency_results")
+}
+
+// Rollup materializado (patrón CourseProgress del lado K-12): recalculado
+// tras cada intento/examen calificado, es lo que renderiza el mapa de calor.
+model DoctoralStudentCompetencyScore {
+  id                       String                 @id @default(uuid()) @db.Uuid
+  student                  DoctoralStudentProfile @relation(fields: [doctoralStudentProfileId], references: [id])
+  doctoralStudentProfileId String                 @db.Uuid
+  competency               CompetencyArea         @relation(fields: [competencyAreaId], references: [id])
+  competencyAreaId         String                 @db.Uuid
+  score                    Float // 0-100 rollup ponderado
+  sampleCount              Int                    @default(0)
+  updatedAt                DateTime               @updatedAt
+
+  @@unique([doctoralStudentProfileId, competencyAreaId])
+  @@map("doctoral_student_competency_scores")
+}
+
+// --- Examen final de módulo ("prueba sin ayuda", nota 10-70) ---
+
+model DoctoralExam {
+  id               String        @id @default(uuid()) @db.Uuid
+  module           ProgramModule @relation(fields: [moduleId], references: [id])
+  moduleId         String        @unique @db.Uuid
+  title            String
+  questionCount    Int           @default(10)
+  timeLimitMinutes Int           @default(60)
+  minScore         Int           @default(10)
+  maxScore         Int           @default(70)
+  passScore        Int           @default(40)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  questions DoctoralExamQuestion[]
+  attempts  DoctoralExamAttempt[]
+
+  @@map("doctoral_exams")
+}
+
+model DoctoralExamQuestion {
+  id          String               @id @default(uuid()) @db.Uuid
+  exam        DoctoralExam         @relation(fields: [examId], references: [id])
+  examId      String               @db.Uuid
+  order       Int
+  type        DoctoralExerciseType
+  statement   String
+  scenario    String?
+  modelAnswer Json?
+
+  options           DoctoralExamQuestionOption[]
+  competencyWeights DoctoralExamQuestionCompetencyWeight[]
+  answers           DoctoralExamAnswer[]
+
+  @@unique([examId, order])
+  @@map("doctoral_exam_questions")
+}
+
+model DoctoralExamQuestionOption {
+  id         String               @id @default(uuid()) @db.Uuid
+  question   DoctoralExamQuestion @relation(fields: [questionId], references: [id])
+  questionId String               @db.Uuid
+  optionKey  String
+  text       String
+  isCorrect  Boolean
+  order      Int
+
+  @@map("doctoral_exam_question_options")
+}
+
+model DoctoralExamQuestionCompetencyWeight {
+  id               String               @id @default(uuid()) @db.Uuid
+  question         DoctoralExamQuestion @relation(fields: [questionId], references: [id])
+  questionId       String               @db.Uuid
+  competency       CompetencyArea       @relation(fields: [competencyAreaId], references: [id])
+  competencyAreaId String               @db.Uuid
+  weight           Float                @default(1)
+
+  @@unique([questionId, competencyAreaId])
+  @@map("doctoral_exam_question_competency_weights")
+}
+
+model DoctoralExamAttempt {
+  id                       String                    @id @default(uuid()) @db.Uuid
+  student                  DoctoralStudentProfile    @relation(fields: [doctoralStudentProfileId], references: [id])
+  doctoralStudentProfileId String                    @db.Uuid
+  exam                     DoctoralExam              @relation(fields: [examId], references: [id])
+  examId                   String                    @db.Uuid
+  seed                     String
+  startedAt                DateTime                  @default(now())
+  expiresAt                DateTime
+  submittedAt              DateTime?
+  status                   DoctoralExamAttemptStatus @default(in_progress)
+  score                    Int? // 10-70
+  passed                   Boolean?
+
+  answers DoctoralExamAnswer[]
+
+  @@index([doctoralStudentProfileId, examId])
+  @@index([status, expiresAt])
+  @@map("doctoral_exam_attempts")
+}
+
+model DoctoralExamAnswer {
+  id                String               @id @default(uuid()) @db.Uuid
+  attempt           DoctoralExamAttempt  @relation(fields: [attemptId], references: [id])
+  attemptId         String               @db.Uuid
+  question          DoctoralExamQuestion @relation(fields: [questionId], references: [id])
+  questionId        String               @db.Uuid
+  selectedOptionKey String?
+  responseText      String?
+  isCorrect         Boolean?
+  semanticScore     Float?
+  createdAt         DateTime             @default(now())
+
+  @@unique([attemptId, questionId])
+  @@map("doctoral_exam_answers")
+}
+
+// --- Encuesta de cierre de módulo ---
+
+model DoctoralModuleSurvey {
+  id        String        @id @default(uuid()) @db.Uuid
+  module    ProgramModule @relation(fields: [moduleId], references: [id])
+  moduleId  String        @unique @db.Uuid
+  title     String        @default("Encuesta de cierre de módulo")
+  createdAt DateTime      @default(now())
+
+  questions DoctoralSurveyQuestion[]
+  responses DoctoralModuleSurveyResponse[]
+
+  @@map("doctoral_module_surveys")
+}
+
+model DoctoralSurveyQuestion {
+  id       String                     @id @default(uuid()) @db.Uuid
+  survey   DoctoralModuleSurvey       @relation(fields: [surveyId], references: [id])
+  surveyId String                     @db.Uuid
+  order    Int
+  type     DoctoralSurveyQuestionType
+  prompt   String
+
+  answers DoctoralSurveyAnswer[]
+
+  @@unique([surveyId, order])
+  @@map("doctoral_survey_questions")
+}
+
+model DoctoralModuleSurveyResponse {
+  id                       String               @id @default(uuid()) @db.Uuid
+  survey                   DoctoralModuleSurvey @relation(fields: [surveyId], references: [id])
+  surveyId                 String               @db.Uuid
+  student                  DoctoralStudentProfile @relation(fields: [doctoralStudentProfileId], references: [id])
+  doctoralStudentProfileId String               @db.Uuid
+  submittedAt              DateTime             @default(now())
+
+  answers DoctoralSurveyAnswer[]
+
+  @@unique([surveyId, doctoralStudentProfileId])
+  @@map("doctoral_module_survey_responses")
+}
+
+model DoctoralSurveyAnswer {
+  id          String                       @id @default(uuid()) @db.Uuid
+  response    DoctoralModuleSurveyResponse @relation(fields: [responseId], references: [id])
+  responseId  String                       @db.Uuid
+  question    DoctoralSurveyQuestion       @relation(fields: [questionId], references: [id])
+  questionId  String                       @db.Uuid
+  likertValue Int? // 1-5
+  textValue   String?
+
+  @@unique([responseId, questionId])
+  @@map("doctoral_survey_answers")
+}
+
+// --- Grupos de estudiantes (para tareas grupales) ---
+
+model DoctoralStudentGroup {
+  id        String         @id @default(uuid()) @db.Uuid
+  cohort    DoctoralCohort @relation(fields: [cohortId], references: [id])
+  cohortId  String         @db.Uuid
+  name      String
+  createdAt DateTime       @default(now())
+  deletedAt DateTime?
+
+  members         DoctoralStudentGroupMember[]
+  assignmentTargets DoctoralAssignmentTargetGroup[]
+
+  @@index([cohortId])
+  @@map("doctoral_student_groups")
+}
+
+model DoctoralStudentGroupMember {
+  id                       String                 @id @default(uuid()) @db.Uuid
+  group                    DoctoralStudentGroup   @relation(fields: [groupId], references: [id])
+  groupId                  String                 @db.Uuid
+  student                  DoctoralStudentProfile @relation(fields: [doctoralStudentProfileId], references: [id])
+  doctoralStudentProfileId String                 @db.Uuid
+
+  @@unique([groupId, doctoralStudentProfileId])
+  @@map("doctoral_student_group_members")
+}
+
+// --- Archivos (plantillas de tarea / entregas) ---
+//
+// Guardado como bytea en Postgres (no disco local): Railway no garantiza
+// disco persistente entre despliegues, y evita depender de un bucket S3/GCS
+// que este proyecto no tiene configurado. Límite de tamaño aplicado en el
+// servicio (no en el schema) — ver DoctoralFilesService.
+model DoctoralFile {
+  id               String   @id @default(uuid()) @db.Uuid
+  fileName         String
+  mimeType         String
+  sizeBytes        Int
+  data             Bytes
+  uploadedByUserId String   @db.Uuid
+  createdAt        DateTime @default(now())
+
+  assignmentTemplates       DoctoralAssignment[]           @relation("AssignmentTemplateFile")
+  assignmentSubmissionFiles DoctoralAssignmentSubmission[] @relation("SubmissionFile")
+
+  @@map("doctoral_files")
+}
+
+// --- Tareas del docente (individual / grupal / toda la cohorte) ---
+
+/** Sin targets ni targetGroups = toda la cohorte. targets = alumnos
+ * individuales. targetGroups = grupos completos. Mismo patrón que
+ * Assignment/AssignmentTarget del lado K-12. */
+model DoctoralAssignment {
+  id                         String                   @id @default(uuid()) @db.Uuid
+  cohort                     DoctoralCohort           @relation(fields: [cohortId], references: [id])
+  cohortId                   String                   @db.Uuid
+  module                     ProgramModule?           @relation(fields: [moduleId], references: [id])
+  moduleId                   String?                  @db.Uuid
+  professor                  DoctoralProfessorProfile @relation(fields: [doctoralProfessorProfileId], references: [id])
+  doctoralProfessorProfileId String                   @db.Uuid
+  title                      String
+  instructions               String?
+  templateFile               DoctoralFile?            @relation("AssignmentTemplateFile", fields: [templateFileId], references: [id])
+  templateFileId             String?                  @db.Uuid
+  dueAt                      DateTime?
+  status                     DoctoralAssignmentStatus @default(draft)
+  createdAt                  DateTime                 @default(now())
+  updatedAt                  DateTime                 @updatedAt
+  deletedAt                  DateTime?
+
+  questions    DoctoralAssignmentQuestion[]
+  submissions  DoctoralAssignmentSubmission[]
+  targets      DoctoralAssignmentTarget[]
+  targetGroups DoctoralAssignmentTargetGroup[]
+
+  @@index([cohortId])
+  @@map("doctoral_assignments")
+}
+
+model DoctoralAssignmentTarget {
+  id                       String                 @id @default(uuid()) @db.Uuid
+  assignment               DoctoralAssignment     @relation(fields: [assignmentId], references: [id])
+  assignmentId             String                 @db.Uuid
+  student                  DoctoralStudentProfile @relation(fields: [doctoralStudentProfileId], references: [id])
+  doctoralStudentProfileId String                 @db.Uuid
+
+  @@unique([assignmentId, doctoralStudentProfileId])
+  @@map("doctoral_assignment_targets")
+}
+
+model DoctoralAssignmentTargetGroup {
+  id           String               @id @default(uuid()) @db.Uuid
+  assignment   DoctoralAssignment   @relation(fields: [assignmentId], references: [id])
+  assignmentId String               @db.Uuid
+  group        DoctoralStudentGroup @relation(fields: [groupId], references: [id])
+  groupId      String               @db.Uuid
+
+  @@unique([assignmentId, groupId])
+  @@map("doctoral_assignment_target_groups")
+}
+
+model DoctoralAssignmentQuestion {
+  id               String                         @id @default(uuid()) @db.Uuid
+  assignment       DoctoralAssignment             @relation(fields: [assignmentId], references: [id])
+  assignmentId     String                         @db.Uuid
+  order            Int
+  type             DoctoralAssignmentQuestionType
+  prompt           String
+  options          Json?
+  correctOptionKey String?
+  maxScore         Int                            @default(100)
+
+  answers DoctoralAssignmentAnswer[]
+
+  @@unique([assignmentId, order])
+  @@map("doctoral_assignment_questions")
+}
+
+model DoctoralAssignmentSubmission {
+  id                       String                             @id @default(uuid()) @db.Uuid
+  assignment               DoctoralAssignment                 @relation(fields: [assignmentId], references: [id])
+  assignmentId             String                             @db.Uuid
+  student                  DoctoralStudentProfile             @relation(fields: [doctoralStudentProfileId], references: [id])
+  doctoralStudentProfileId String                             @db.Uuid
+  status                   DoctoralAssignmentSubmissionStatus @default(draft)
+  file                     DoctoralFile?                       @relation("SubmissionFile", fields: [fileId], references: [id])
+  fileId                   String?                             @db.Uuid
+  submittedAt              DateTime?
+  gradedAt                 DateTime?
+  totalScore               Int?
+  feedback                 String?
+
+  answers DoctoralAssignmentAnswer[]
+
+  @@unique([assignmentId, doctoralStudentProfileId])
+  @@map("doctoral_assignment_submissions")
+}
+
+model DoctoralAssignmentAnswer {
+  id                     String                       @id @default(uuid()) @db.Uuid
+  submission             DoctoralAssignmentSubmission @relation(fields: [assignmentSubmissionId], references: [id])
+  assignmentSubmissionId String                       @db.Uuid
+  question               DoctoralAssignmentQuestion   @relation(fields: [assignmentQuestionId], references: [id])
+  assignmentQuestionId   String                       @db.Uuid
+  responseText           String?
+  selectedOptionKey      String?
+  score                  Int?
+  feedback               String?
+  gradedByUserId         String?                      @db.Uuid
+  gradedAt               DateTime?
+
+  @@unique([assignmentSubmissionId, assignmentQuestionId])
+  @@map("doctoral_assignment_answers")
+}

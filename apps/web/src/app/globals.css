@@ -1,0 +1,106 @@
+@import "tailwindcss";
+
+/*
+ * Tokens de diseño del portal de Doctorados — paleta académica sobria,
+ * pensada para 3 roles (estudiante/docente/administrador) de posgrado.
+ * Convención Tailwind v4 "CSS-first" (variables en :root + @theme inline).
+ */
+:root {
+  --navy: #16324a;
+  --navy-d: #0d2032;
+  --navy-txt: #0d2032;
+  --azul2: #2f6690;
+  --garnet: #7a1f34;
+  --garnet-d: #591221;
+  --gold: #a9791f;
+  --paper: #f7f4ec;
+  --paper2: #efe9d8;
+  --ink: #2a2a28;
+  --ink-suave: #5c5952;
+  --borde: #d9d2bd;
+  --exito: #2f7d4f;
+  --alerta: #b8760e;
+  --peligro: #a83232;
+
+  --radius: 14px;
+  --radius-sm: 10px;
+  --shadow: 0 4px 16px rgba(13, 32, 50, 0.12);
+  --font:
+    "Georgia", "Iowan Old Style", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  --background: var(--paper);
+  --foreground: var(--ink);
+}
+
+@theme inline {
+  --color-navy: var(--navy);
+  --color-navy-d: var(--navy-d);
+  --color-navy-txt: var(--navy-txt);
+  --color-azul2: var(--azul2);
+  --color-garnet: var(--garnet);
+  --color-garnet-d: var(--garnet-d);
+  --color-gold: var(--gold);
+  --color-paper: var(--paper);
+  --color-paper2: var(--paper2);
+  --color-ink: var(--ink);
+  --color-ink-suave: var(--ink-suave);
+  --color-borde: var(--borde);
+  --color-exito: var(--exito);
+  --color-alerta: var(--alerta);
+  --color-peligro: var(--peligro);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --radius-card: var(--radius);
+  --radius-sm: var(--radius-sm);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #14202a;
+    --paper2: #1b2a36;
+    --ink: #eae6da;
+    --ink-suave: #b9b3a2;
+    --borde: #2c3c48;
+    --background: var(--paper);
+    --foreground: var(--ink);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+.card {
+  background: var(--paper2);
+  border: 1px solid var(--borde);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.tap-target {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+}
+
+a.link-pill:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--azul2);
+  outline-offset: 2px;
+}
