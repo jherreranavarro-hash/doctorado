@@ -18,6 +18,13 @@ const prisma = new PrismaClient();
  * al resto. Opt-in vía ADMIN_BOOTSTRAP_EMAIL/ADMIN_BOOTSTRAP_PASSWORD: si
  * faltan, se omite (no es obligatorio, ej. cuando el admin ya se creó a
  * mano contra el propio endpoint de login/gestión).
+ *
+ * Actualiza el passwordHash en cada arranque (no solo al crear el usuario):
+ * el start command corre este seed en cada deploy, así que si cambia
+ * ADMIN_BOOTSTRAP_PASSWORD en el entorno, el próximo arranque sincroniza la
+ * contraseña real sin tener que tocar la base de datos a mano — a costa de
+ * que un password cambiado manualmente por otra vía se revertiría en el
+ * siguiente arranque (hoy no existe esa vía, así que no aplica).
  */
 async function seedAdminBootstrap(): Promise<void> {
   const email = process.env.ADMIN_BOOTSTRAP_EMAIL;
@@ -39,7 +46,7 @@ async function seedAdminBootstrap(): Promise<void> {
   const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
   const user = await prisma.user.upsert({
     where: { email },
-    update: {},
+    update: { passwordHash, status: "active" },
     create: { email, passwordHash, status: "active" },
   });
   const existingRole = await prisma.userRole.findFirst({
