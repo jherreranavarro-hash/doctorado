@@ -130,6 +130,34 @@ export default function EstudianteDashboardPage() {
             {filteredModules.map((m) => {
               const progressPercent =
                 m.exercisesTotal > 0 ? Math.round((m.exercisesAttempted / m.exercisesTotal) * 100) : 0;
+              const exercisesDone = m.exercisesTotal > 0 && m.exercisesAttempted >= m.exercisesTotal;
+
+              const chips: { key: string; className: string; label: string }[] = [
+                {
+                  key: "exercises",
+                  className: exercisesDone
+                    ? "text-exito border-exito/40 bg-exito/15"
+                    : "text-ink-suave border-borde bg-borde/50",
+                  label: `Ejercicios ${m.exercisesAttempted}/${m.exercisesTotal}`,
+                },
+              ];
+              if (m.hasExam) {
+                chips.push({
+                  key: "exam",
+                  className: EXAM_STATUS_COLOR[m.examStatus],
+                  label: `Examen: ${EXAM_STATUS_LABEL[m.examStatus]}${m.bestExamScore !== null ? ` (${m.bestExamScore}/70)` : ""}`,
+                });
+              }
+              if (m.hasSurvey) {
+                chips.push({
+                  key: "survey",
+                  className: m.surveySubmitted
+                    ? "text-exito border-exito/40 bg-exito/15"
+                    : "text-ink-suave border-borde bg-borde/50",
+                  label: m.surveySubmitted ? "Encuesta enviada" : "Encuesta pendiente",
+                });
+              }
+
               return (
                 <Link key={m.moduleId} href={`/estudiante/modulos/${m.moduleId}`} className="tap-target block">
                   <IndexCard
@@ -142,41 +170,24 @@ export default function EstudianteDashboardPage() {
                     }
                   >
                     <div className="mt-3">
-                      <div className="flex items-center justify-between text-xs font-semibold text-ink-suave mb-1.5">
-                        <span>Ejercicios</span>
-                        <span>
-                          {m.exercisesAttempted}/{m.exercisesTotal}
-                        </span>
-                      </div>
                       <div className="h-2 rounded-full bg-borde/60 overflow-hidden">
                         <div
-                          className="h-full rounded-full bg-azul2 transition-[width] duration-500"
+                          className={`h-full rounded-full transition-[width] duration-500 ${exercisesDone ? "bg-exito" : "bg-azul2"}`}
                           style={{ width: `${progressPercent}%` }}
                         />
                       </div>
                     </div>
 
-                    {m.hasExam || m.hasSurvey ? (
-                      <div className="mt-3 pt-3 border-t border-borde flex flex-wrap gap-2">
-                        {m.hasExam ? (
-                          <Badge className={EXAM_STATUS_COLOR[m.examStatus]}>
-                            Examen: {EXAM_STATUS_LABEL[m.examStatus]}
-                            {m.bestExamScore !== null ? ` (${m.bestExamScore}/70)` : ""}
-                          </Badge>
-                        ) : null}
-                        {m.hasSurvey ? (
-                          <Badge
-                            className={
-                              m.surveySubmitted
-                                ? "text-exito border-exito/40 bg-exito/15"
-                                : "text-ink-suave border-borde bg-borde/50"
-                            }
-                          >
-                            {m.surveySubmitted ? "Encuesta enviada" : "Encuesta pendiente"}
-                          </Badge>
-                        ) : null}
-                      </div>
-                    ) : null}
+                    <div
+                      className="mt-3 pt-3 border-t border-borde grid gap-2"
+                      style={{ gridTemplateColumns: `repeat(${chips.length}, minmax(0, 1fr))` }}
+                    >
+                      {chips.map((chip) => (
+                        <Badge key={chip.key} className={`justify-center text-center ${chip.className}`}>
+                          {chip.label}
+                        </Badge>
+                      ))}
+                    </div>
                   </IndexCard>
                 </Link>
               );
