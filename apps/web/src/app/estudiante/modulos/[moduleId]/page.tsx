@@ -58,19 +58,18 @@ export default function ModuleDetailPage(props: PageProps<"/estudiante/modulos/[
       <Link href="/estudiante" className="text-azul2 font-semibold link-pill">
         ← Mis módulos
       </Link>
-      <h1 className="text-2xl font-bold text-navy-txt mt-2 mb-1">{moduleData.title}</h1>
+      <h1 className="text-2xl font-bold text-navy-txt mt-2 mb-6">{moduleData.title}</h1>
       {syllabus ? (
         <a
           href={`${API_BASE_URL}/program-modules/${moduleData.moduleId}/syllabus`}
           target="_blank"
           rel="noopener"
-          className="text-azul2 underline text-sm inline-block mb-6"
+          className="inline-flex items-center gap-2 text-azul2 font-semibold text-sm mb-6 -mt-4 hover:underline"
         >
+          <span aria-hidden>⬇</span>
           Descargar syllabus ({syllabus.fileName})
         </a>
-      ) : (
-        <p className="mb-6" />
-      )}
+      ) : null}
 
       <div className="flex flex-col gap-8">
         {moduleData.topics.map((topic) => (
@@ -135,7 +134,7 @@ export default function ModuleDetailPage(props: PageProps<"/estudiante/modulos/[
                           </Badge>
                         )
                       ) : (
-                        <Badge className="text-ink-suave border-borde bg-paper">Sin intentar</Badge>
+                        <Badge className="text-ink-suave border-borde bg-borde/50">Sin intentar</Badge>
                       )}
                     </div>
                   </Card>

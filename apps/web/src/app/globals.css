@@ -4,6 +4,12 @@
  * Tokens de diseño del portal de Doctorados — paleta académica sobria,
  * pensada para 3 roles (estudiante/docente/administrador) de posgrado.
  * Convención Tailwind v4 "CSS-first" (variables en :root + @theme inline).
+ *
+ * El fondo de página (--paper) y el de las cards (--paper2) deben tener
+ * contraste real entre sí — antes eran dos beiges casi idénticos y toda la
+ * interfaz se veía plana. Ahora --paper es un beige más presente (el
+ * "lienzo") y --paper2 es casi blanco (la "superficie" que flota encima,
+ * reforzada con sombra en dos capas).
  */
 :root {
   --navy: #16324a;
@@ -13,18 +19,21 @@
   --garnet: #7a1f34;
   --garnet-d: #591221;
   --gold: #a9791f;
-  --paper: #f7f4ec;
-  --paper2: #efe9d8;
-  --ink: #2a2a28;
-  --ink-suave: #5c5952;
-  --borde: #d9d2bd;
-  --exito: #2f7d4f;
+  --paper: #eee4cd;
+  --paper2: #fffdf8;
+  --ink: #201f1b;
+  --ink-suave: #66604f;
+  --borde: #e3d9bc;
+  --borde-fuerte: #cabb92;
+  --exito: #1f7a4d;
   --alerta: #b8760e;
   --peligro: #a83232;
 
-  --radius: 14px;
+  --radius: 16px;
   --radius-sm: 10px;
-  --shadow: 0 4px 16px rgba(13, 32, 50, 0.12);
+  --shadow-sm: 0 1px 2px rgba(22, 50, 74, 0.07);
+  --shadow: 0 1px 3px rgba(22, 50, 74, 0.07), 0 10px 28px -6px rgba(22, 50, 74, 0.16);
+  --shadow-hover: 0 4px 10px rgba(22, 50, 74, 0.1), 0 18px 36px -8px rgba(22, 50, 74, 0.22);
   --font:
     "Georgia", "Iowan Old Style", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-sans:
@@ -47,6 +56,7 @@
   --color-ink: var(--ink);
   --color-ink-suave: var(--ink-suave);
   --color-borde: var(--borde);
+  --color-borde-fuerte: var(--borde-fuerte);
   --color-exito: var(--exito);
   --color-alerta: var(--alerta);
   --color-peligro: var(--peligro);
@@ -58,11 +68,12 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #14202a;
-    --paper2: #1b2a36;
-    --ink: #eae6da;
-    --ink-suave: #b9b3a2;
-    --borde: #2c3c48;
+    --paper: #10191f;
+    --paper2: #1e2c35;
+    --ink: #ede7d8;
+    --ink-suave: #b3ab97;
+    --borde: #2f4049;
+    --borde-fuerte: #435762;
     --background: var(--paper);
     --foreground: var(--ink);
   }
@@ -79,6 +90,10 @@ body {
 
 body {
   background: var(--background);
+  /* Lienzo con una textura sutil (no un beige plano) para dar profundidad
+     al fondo sin competir con el contenido. */
+  background-image: radial-gradient(circle at 1px 1px, rgba(22, 50, 74, 0.05) 1px, transparent 0);
+  background-size: 22px 22px;
   color: var(--foreground);
   font-family: var(--font-sans);
 }
@@ -88,6 +103,10 @@ body {
   border: 1px solid var(--borde);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+  transition:
+    box-shadow 180ms ease,
+    transform 180ms ease,
+    border-color 180ms ease;
 }
 
 .tap-target {
