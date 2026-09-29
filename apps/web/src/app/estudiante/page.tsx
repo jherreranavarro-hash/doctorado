@@ -180,11 +180,11 @@ export default function EstudianteDashboardPage() {
 
                     <div
                       className="mt-3 pt-3 border-t border-borde grid gap-2"
-                      style={{ gridTemplateColumns: `repeat(${chips.length}, minmax(0, 1fr))` }}
+                      style={{ gridTemplateColumns: "repeat(auto-fit, minmax(112px, 1fr))" }}
                     >
                       {chips.map((chip) => (
-                        <Badge key={chip.key} className={`justify-center text-center ${chip.className}`}>
-                          {chip.label}
+                        <Badge key={chip.key} title={chip.label} className={`min-w-0 ${chip.className}`}>
+                          <span className="min-w-0 flex-1 truncate text-center">{chip.label}</span>
                         </Badge>
                       ))}
                     </div>
